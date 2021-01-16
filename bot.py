@@ -1,5 +1,5 @@
 from typing import List
-from copy import copy
+from copy import deepcopy
 from functools import reduce
 from game_message import GameMessage, Position, Crew, Unit, UnitType, Map
 from game_command import Action, UnitAction, UnitActionType
@@ -68,7 +68,10 @@ class Bot:
                         mine = self.closest_to(unit.position, self.mines)
                         actions.append(UnitAction(UnitActionType.MINE, unit.id, mine))
                     else:
-                        mine_neighbor = self.closest_to(unit.position, self.mine_neighbors)
+                        non_occupied = deepcopy(self.mine_neighbors)
+                        for u in self.units:
+                            non_occupied = list(filter(lambda n : n.x != u.position.x or n.y != u.position.y, non_occupied))
+                        mine_neighbor = self.closest_to(unit.position, non_occupied)
                         actions.append(UnitAction(UnitActionType.MOVE, unit.id, mine_neighbor))
 
 
@@ -96,7 +99,10 @@ class Bot:
         return Position(best_path[1][0], best_path[1][1])
 
     def get_path(self, start: Position, end: Position):
-        grid = Grid(matrix=self.matrix)
+        matrix_with_units = deepcopy(self.matrix)
+        for u in self.units:
+            matrix_with_units[u.position.x][u.position.y] = 0
+        grid = Grid(matrix=matrix_with_units)
         path_start = grid.node(start.x, start.y)
         path_end = grid.node(end.x, end.y)
         path, _ = self.finder.find_path(path_start, path_end, grid)
