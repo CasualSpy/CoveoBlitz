@@ -23,21 +23,19 @@ class Bot:
         No path finding is required, you can simply send a destination per unit and the game will move your unit towards
         it in the next turns.
         """
-
-
-
         my_crew: Crew = game_message.get_crews_by_id()[game_message.crewId]
+
         if self.mines == []:
             for x, col in enumerate(game_message.map.tiles):
                 matrix_col = []
                 for y, tile in enumerate(col):
+                    pos = Position(x,y)
                     matrix_col.append(1 if tile == "EMPTY" or tile == "MINE" else 0)
                     if tile == "MINE":
                         self.mines.append(Position(x,y))
                 self.matrix.append(matrix_col)
             self.mine_neighbors = reduce(lambda x, y : x + y, list(map(self.neighbors, self.mines)))
             self.base_neighbors = self.neighbors(my_crew.homeBase)
-
         self.units = reduce(lambda x, y : x + y, list(map(lambda x : x.units, game_message.crews)))
 
         for minor in self.minors:
@@ -54,6 +52,31 @@ class Bot:
                     minor.hasCart = True
                     cart = Cart(minor, unit.id)
                     self.carts.append(cart)
+
+                cartObject = next((x for x in self.carts if x.id is unit.id), None)
+                if unit.blitzium == 0:
+                    minor = self.getClosestMinor(my_crew, unit, cartObject)
+                    closest_path = self.closest_to(unit.position, [minor.position], my_crew)
+                    minor_neighbors = self.neighbors(minor.position)
+
+                    is_next_to_minor = reduce(lambda x, y: x or y,
+                                              map(lambda m: m.x == unit.position.x and m.y == unit.position.y,
+                                                  minor_neighbors))
+
+                    if is_next_to_minor and unit.blitzium < 25:
+                        actions.append(UnitAction(UnitActionType.PICKUP, unit.id, minor.position))
+                    else:
+                        actions.append(UnitAction(UnitActionType.MOVE, unit.id, closest_path))
+                else:
+                    closest_path_base = self.closest_to(unit.position, self.base_neighbors, my_crew)
+
+                    is_next_to_base = reduce(lambda x, y: x or y,
+                                             map(lambda m: m.x == unit.position.x and m.y == unit.position.y,
+                                                 self.base_neighbors))
+                    if is_next_to_base:
+                        actions.append(UnitAction(UnitActionType.DROP, unit.id, my_crew.homeBase))
+                    else:
+                        actions.append(UnitAction(UnitActionType.MOVE, unit.id, closest_path_base))
             elif unit.type == UnitType.MINER:
                 minor = next((x for x in self.minors if x.id is not unit.id), None)
                 if minor is not None:
@@ -74,62 +97,50 @@ class Bot:
                 minor = next((x for x in self.minors if x.position == unit.position), None)
                 is_next_to_mine = reduce(lambda x, y : x or y, map(lambda m : m.x == unit.position.x and m.y == unit.position.y, self.mine_neighbors))
                 if is_next_to_mine:
-                    mine = self.closest_to(unit.position, self.mines)
+                    mine = self.closest_to(unit.position, self.mines, my_crew)
                     actions.append(UnitAction(UnitActionType.MINE, unit.id, mine))
                     minor.isMining = True
                 else:
-                    mine_neighbor = self.closest_to(unit.position, self.mine_neighbors)
+                    mine_neighbor = self.closest_to(unit.position, self.mine_neighbors, my_crew)
                     actions.append(UnitAction(UnitActionType.MOVE, unit.id, mine_neighbor))
                     minor.isDirty = True
 
-        carts = self.getCarts(my_crew)
-
-        if game_message.tick == 75:
-            actions.append(BuyAction(UnitType.MINER))
+        #carts = self.getCarts(my_crew)
 
         if not self.hasSameAmountofMinorsAndCart(my_crew):
             actions.append(BuyAction(UnitType.CART))
-        else:
-            for cart in carts:
-                cartObject = next((x for x in self.carts if x.id is cart.id), None)
-                if cart.blitzium == 0:
-                    minor = self.getClosestMinor(my_crew, cart, cartObject)
-                    closest_path = self.closest_to(cart.position, [minor.position])
-                    minor_neighbors = self.neighbors(minor.position)
 
-                    is_next_to_minor = reduce(lambda x, y: x or y,
-                                             map(lambda m: m.x == cart.position.x and m.y == cart.position.y,
-                                                 minor_neighbors))
+        #for cart in carts:
 
-                    if is_next_to_minor:
-                        actions.append(UnitAction(UnitActionType.PICKUP, cart.id, minor.position))
-                    else:
-                        actions.append(UnitAction(UnitActionType.MOVE, cart.id, closest_path))
-                else:
-                    closest_path_base = self.closest_to(cart.position, self.base_neighbors)
-
-                    is_next_to_base = reduce(lambda x, y: x or y,
-                                              map(lambda m: m.x == cart.position.x and m.y == cart.position.y,
-                                                  self.base_neighbors))
-                    if is_next_to_base:
-                        actions.append(UnitAction(UnitActionType.DROP, cart.id, my_crew.homeBase))
-                    else:
-                        actions.append(UnitAction(UnitActionType.MOVE, cart.id, closest_path_base))
 
         return actions
 
-    def closest_to(self, position: Position, nodes: List[Position]):
+
+    def closest_to(self, position: Position, nodes: List[Position], my_crew):
         best_path = None
         distance = 0
         print(position)
         if position in nodes:
             return None
+
+        crewPositions = []
+        for unit in my_crew.units:
+            if position != unit.position:
+                crewPositions.append((unit.position.x, unit.position.y))
         for node in nodes:
             path = self.get_path(position, node)
+            if my_crew.homeBase != position:
+                for unit in crewPositions:
+                    if unit in path:
+                        self.matrix[unit[0]][unit[1]] = 0
+                        path = self.get_path(position, node)
+                        self.matrix[unit[0]][unit[1]] = 1
             if (best_path == None or len(path) < distance) and len(path) > 0:
                 best_path = path
                 distance = len(path)
-        return Position(best_path[1][0], best_path[1][1])
+
+        best_path_pos = Position(best_path[1][0], best_path[1][1])
+        return best_path_pos
 
     def get_path(self, start: Position, end: Position):
         grid = Grid(matrix = self.matrix)
