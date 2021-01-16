@@ -1,4 +1,5 @@
 from typing import List
+from functools import reduce
 from game_message import GameMessage, Position, Crew, Unit, UnitType
 from game_command import Action, UnitAction, UnitActionType
 from pathfinding.core.grid import Grid
@@ -28,18 +29,23 @@ class Bot:
                     if tile == "MINE":
                         self.mines.append(Position(x,y))
                 self.matrix.append(matrix_col)
+            self.mine_neighbors = reduce(lambda x, y : x + y, list(map(self.neighbors, self.mines)))
 
-        #print(self.mines)
         my_crew: Crew = game_message.get_crews_by_id()[game_message.crewId]
-        #print(my_crew.units)
+        self.units = reduce(lambda x, y : x + y, list(map(lambda x : x.units, game_message.crews)))
 
-        actions: List[UnitAction] = [UnitAction(UnitActionType.MOVE,
-                                                unit.id,
-                                                self.closest_to(unit.position, self.mines)) for unit in my_crew.units]
+        actions: List[UnitAction] = []
+        for unit in my_crew.units:
+            if unit.type == UnitType.MINER:
+                is_next_to_mine = reduce(lambda x, y : x or y, map(lambda m : m.x == unit.position.x and m.y == unit.position.y, self.mine_neighbors))
+                if is_next_to_mine:
+                    actions.append(UnitAction(UnitActionType.MINE, unit.id, self.closest_to(unit.position, self.mines)))
+                else:
+                    actions.append(UnitAction(UnitActionType.MOVE, unit.id, self.closest_to(unit.position, self.mines)))
+
         return actions
 
     def closest_to(self, position: Position, nodes: List[Position]):
-        #print(position, nodes)
         best_path = None
         distance = 0
         for node in nodes:
@@ -47,12 +53,17 @@ class Bot:
             if (best_path == None or len(path) < distance) and len(path) > 0:
                 best_path = path
                 distance = len(path)
-        #print(best_path[0])
         return Position(best_path[1][0], best_path[1][1])
 
     def get_path(self, start: Position, end: Position):
-        grid = Grid(matrix = self.matrix)
+        new_matrix = self.matrix[:]
+        for unit in self.units:
+            new_matrix[unit.position.x][unit.position.y] = 0
+        grid = Grid(matrix = new_matrix)
         path_start = grid.node(start.x, start.y)
         path_end = grid.node(end.x, end.y)
         path, _ = self.finder.find_path(path_start, path_end, grid)
         return path
+    def neighbors(self, position: Position):
+        tiles = [(1,0),(-1,0),(0,1),(0,-1)]
+        return list(map(lambda x : Position(x[0] + position.x, x[1] + position.y), tiles))
