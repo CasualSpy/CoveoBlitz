@@ -76,15 +76,15 @@ class Bot:
                     else:
                         actions.append(UnitAction(UnitActionType.MOVE, cart.id, closest_path))
                 else:
-                    base_neighbor = self.closest_to(cart.position, self.base_neighbors)
+                    closest_path_base = self.closest_to(cart.position, self.base_neighbors)
 
                     is_next_to_base = reduce(lambda x, y: x or y,
                                               map(lambda m: m.x == cart.position.x and m.y == cart.position.y,
                                                   self.base_neighbors))
                     if is_next_to_base:
-                        actions.append(UnitAction(UnitActionType.DROP, cart.id, my_crew.homeBase.id))
+                        actions.append(UnitAction(UnitActionType.DROP, cart.id, my_crew.homeBase))
                     else:
-                        actions.append(UnitAction(UnitActionType.MOVE, cart.id, base_neighbor))
+                        actions.append(UnitAction(UnitActionType.MOVE, cart.id, closest_path_base))
 
         return actions
 
@@ -92,6 +92,10 @@ class Bot:
         best_path = None
         distance = 0
         print(position)
+
+        if position in nodes:
+            return None
+
         for node in nodes:
             path = self.get_path(position, node)
             if (best_path == None or len(path) < distance) and len(path) > 0:
