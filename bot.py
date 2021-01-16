@@ -43,6 +43,21 @@ class Bot:
                 else:
                     actions.append(UnitAction(UnitActionType.MOVE, unit.id, self.closest_to(unit.position, self.mines)))
 
+        miners_position = []
+        for unit in my_crew.units:
+            if unit.type == "MINER":
+                miners_position.append(unit.position)
+
+        if unit.type == UnitType.CART:
+            actions.append(UnitAction(UnitActionType.Move, unit.id, miners_position))
+            if game_message.rules.MAX_CART_CARGO:
+                actions.append(UnitAction(UnitActionType.MOVE, unit.id, my_crew.homeBase))
+                actions.append(UnitAction(UnitActionType.DROP, unit.id))
+
+
+
+
+
         return actions
 
     def closest_to(self, position: Position, nodes: List[Position]):
