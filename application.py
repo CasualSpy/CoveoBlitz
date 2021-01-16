@@ -32,6 +32,7 @@ async def game_loop(websocket: websockets.WebSocketServerProtocol, bot: Bot):
             # Connection is closed, the game is probably over
             break
         game_message: GameMessage = GameMessage.from_json(message)
+        print(game_message)
 
         my_crew: Crew = game_message.get_crews_by_id()[game_message.crewId]
         print(f"\Tick {game_message.tick}")
