@@ -2,7 +2,7 @@ from typing import List
 from copy import copy
 from functools import reduce
 from game_message import GameMessage, Position, Crew, Unit, UnitType
-from game_command import Action, UnitAction, UnitActionType
+from game_command import Action, UnitAction, UnitActionType, BuyAction
 from pathfinding.core.grid import Grid
 from pathfinding.core.diagonal_movement import DiagonalMovement
 from pathfinding.finder.a_star import AStarFinder
@@ -39,14 +39,14 @@ class Bot:
         for unit in my_crew.units:
             print(unit.position)
             if unit.type == UnitType.MINER:
-                if unit.blitzium == 5:
-                    is_next_to_base = reduce(lambda x, y : x or y, map(lambda m : m.x == unit.position.x and m.y == unit.position.y, self.base_neighbors))
-                    if is_next_to_base:
-                        actions.append(UnitAction(UnitActionType.DROP, unit.id, my_crew.homeBase))
-                    else:
-                        base_neighbor = self.closest_to(unit.position, self.base_neighbors)
-                        actions.append(UnitAction(UnitActionType.MOVE, unit.id, base_neighbor))
-                else:
+                #if unit.blitzium == 5:
+                ##    is_next_to_base = reduce(lambda x, y : x or y, map(lambda m : m.x == unit.position.x and m.y == unit.position.y, self.base_neighbors))
+                #    if is_next_to_base:
+                #        actions.append(UnitAction(UnitActionType.DROP, unit.id, my_crew.homeBase))
+                #    else:
+                #        base_neighbor = self.closest_to(unit.position, self.base_neighbors)
+                 #       actions.append(UnitAction(UnitActionType.MOVE, unit.id, base_neighbor))
+                #else:
                     is_next_to_mine = reduce(lambda x, y : x or y, map(lambda m : m.x == unit.position.x and m.y == unit.position.y, self.mine_neighbors))
                     if is_next_to_mine:
                         mine = self.closest_to(unit.position, self.mines)
@@ -55,21 +55,36 @@ class Bot:
                         mine_neighbor = self.closest_to(unit.position, self.mine_neighbors)
                         actions.append(UnitAction(UnitActionType.MOVE, unit.id, mine_neighbor))
 
+        minorsPos = self.getMinorsPositions(my_crew)
+        carts = self.getCarts(my_crew)
 
-        miners_position = []
-        for unit in my_crew.units:
-            if unit.type == "MINER":
-                miners_position.append(unit.position)
+        if not self.hasSameAmountofMinorsAndCart(my_crew):
+            actions.append(BuyAction(UnitType.CART))
+        else:
+            for cart in carts:
+                if cart.blitzium == 0:
+                    minor = self.getClosestMinor(my_crew, cart)
+                    closest_path = self.closest_to(cart.position, [minor.position])
+                    minor_neighbors = self.neighbors(minor.position)
 
-        if unit.type == UnitType.CART:
-            actions.append(UnitAction(UnitActionType.Move, unit.id, miners_position))
-            if game_message.rules.MAX_CART_CARGO:
-                actions.append(UnitAction(UnitActionType.MOVE, unit.id, my_crew.homeBase))
-                actions.append(UnitAction(UnitActionType.DROP, unit.id))
+                    is_next_to_minor = reduce(lambda x, y: x or y,
+                                             map(lambda m: m.x == cart.position.x and m.y == cart.position.y,
+                                                 minor_neighbors))
 
+                    if is_next_to_minor:
+                        actions.append(UnitAction(UnitActionType.PICKUP, cart.id, minor.position))
+                    else:
+                        actions.append(UnitAction(UnitActionType.MOVE, cart.id, closest_path))
+                else:
+                    base_neighbor = self.closest_to(cart.position, self.base_neighbors)
 
-
-
+                    is_next_to_base = reduce(lambda x, y: x or y,
+                                              map(lambda m: m.x == cart.position.x and m.y == cart.position.y,
+                                                  self.base_neighbors))
+                    if is_next_to_base:
+                        actions.append(UnitAction(UnitActionType.DROP, cart.id, my_crew.homeBase.id))
+                    else:
+                        actions.append(UnitAction(UnitActionType.MOVE, cart.id, base_neighbor))
 
         return actions
 
@@ -91,6 +106,48 @@ class Bot:
         finder = AStarFinder(diagonal_movement = DiagonalMovement.never)
         path, _ = finder.find_path(path_start, path_end, grid)
         return path
+
     def neighbors(self, position: Position):
         tiles = [(1,0),(-1,0),(0,1),(0,-1)]
         return list(map(lambda x : Position(x[0] + position.x, x[1] + position.y), tiles))
+
+    def getMinorsPositions(self, my_crew):
+        miners_position = []
+        for unit in my_crew.units:
+            if unit.type == UnitType.MINER:
+                miners_position.append(unit.position)
+        return miners_position
+
+    def getCarts(self, my_crew):
+        carts = []
+        for unit in my_crew.units:
+            if unit.type == UnitType.CART:
+                carts.append(unit)
+        return carts
+
+    def getMinorFromPosition(self, my_crew, minor_pos):
+        for unit in my_crew.units:
+            if unit.type == UnitType.MINER:
+                if unit.position == minor_pos:
+                    return unit
+
+    def getClosestMinor(self, my_crew, cart):
+        distance = None
+        minor = None
+        for unit in my_crew.units:
+            if unit.type == UnitType.MINER:
+                dist = abs(cart.position.x - unit.position.x) + abs(cart.position.y - unit.position.y)
+                if distance == None or dist < distance:
+                    distance = dist
+                    minor = unit
+        return minor
+
+    def hasSameAmountofMinorsAndCart(self, my_crew):
+        minor_amount = 0
+        cart_amount = 0
+        for unit in my_crew.units:
+            if unit.type == UnitType.MINER:
+                minor_amount+=1
+            elif unit.type == UnitType.CART:
+                cart_amount +=1
+        return minor_amount == cart_amount
