@@ -13,6 +13,8 @@ class Bot:
     def __init__(self):
         self.mines = []
         self.matrix = []
+        self.minors: List[Minor] = []
+        self.carts: List[Cart] = []
 
     def get_next_move(self, game_message: GameMessage) -> List[Action]:
         """
@@ -21,6 +23,9 @@ class Bot:
         No path finding is required, you can simply send a destination per unit and the game will move your unit towards
         it in the next turns.
         """
+
+
+
         my_crew: Crew = game_message.get_crews_by_id()[game_message.crewId]
         if self.mines == []:
             for x, col in enumerate(game_message.map.tiles):
@@ -35,10 +40,29 @@ class Bot:
 
         self.units = reduce(lambda x, y : x + y, list(map(lambda x : x.units, game_message.crews)))
 
+        for minor in self.minors:
+            if minor.isDirty:
+                unit = next((x for x in my_crew.units if x.id == minor.id), None)
+                minor.position = unit.position
+
         actions: List[UnitAction] = []
         for unit in my_crew.units:
             print(unit.position)
-            if unit.type == UnitType.MINER:
+            if unit.type == UnitType.CART:
+                minor = next((x for x in self.minors if x.hasCart is False), None)
+                if minor is not None:
+                    minor.hasCart = True
+                    cart = Cart(minor, unit.id)
+                    self.carts.append(cart)
+            elif unit.type == UnitType.MINER:
+                minor = next((x for x in self.minors if x.id is not unit.id), None)
+                if minor is not None:
+                    newMinor = Minor(unit.position, False, False, unit.id)
+                    self.minors.append(newMinor)
+                if game_message.tick == 0:
+                    minor = Minor(unit.position, False, False, unit.id)
+                    self.minors.append(minor)
+
                 #if unit.blitzium == 5:
                 ##    is_next_to_base = reduce(lambda x, y : x or y, map(lambda m : m.x == unit.position.x and m.y == unit.position.y, self.base_neighbors))
                 #    if is_next_to_base:
@@ -47,23 +71,29 @@ class Bot:
                 #        base_neighbor = self.closest_to(unit.position, self.base_neighbors)
                  #       actions.append(UnitAction(UnitActionType.MOVE, unit.id, base_neighbor))
                 #else:
-                    is_next_to_mine = reduce(lambda x, y : x or y, map(lambda m : m.x == unit.position.x and m.y == unit.position.y, self.mine_neighbors))
-                    if is_next_to_mine:
-                        mine = self.closest_to(unit.position, self.mines)
-                        actions.append(UnitAction(UnitActionType.MINE, unit.id, mine))
-                    else:
-                        mine_neighbor = self.closest_to(unit.position, self.mine_neighbors)
-                        actions.append(UnitAction(UnitActionType.MOVE, unit.id, mine_neighbor))
+                minor = next((x for x in self.minors if x.position == unit.position), None)
+                is_next_to_mine = reduce(lambda x, y : x or y, map(lambda m : m.x == unit.position.x and m.y == unit.position.y, self.mine_neighbors))
+                if is_next_to_mine:
+                    mine = self.closest_to(unit.position, self.mines)
+                    actions.append(UnitAction(UnitActionType.MINE, unit.id, mine))
+                    minor.isMining = True
+                else:
+                    mine_neighbor = self.closest_to(unit.position, self.mine_neighbors)
+                    actions.append(UnitAction(UnitActionType.MOVE, unit.id, mine_neighbor))
+                    minor.isDirty = True
 
-        minorsPos = self.getMinorsPositions(my_crew)
         carts = self.getCarts(my_crew)
+
+        if game_message.tick == 75:
+            actions.append(BuyAction(UnitType.MINER))
 
         if not self.hasSameAmountofMinorsAndCart(my_crew):
             actions.append(BuyAction(UnitType.CART))
         else:
             for cart in carts:
+                cartObject = next((x for x in self.carts if x.id is cart.id), None)
                 if cart.blitzium == 0:
-                    minor = self.getClosestMinor(my_crew, cart)
+                    minor = self.getClosestMinor(my_crew, cart, cartObject)
                     closest_path = self.closest_to(cart.position, [minor.position])
                     minor_neighbors = self.neighbors(minor.position)
 
@@ -92,10 +122,8 @@ class Bot:
         best_path = None
         distance = 0
         print(position)
-
         if position in nodes:
             return None
-
         for node in nodes:
             path = self.get_path(position, node)
             if (best_path == None or len(path) < distance) and len(path) > 0:
@@ -135,15 +163,19 @@ class Bot:
                 if unit.position == minor_pos:
                     return unit
 
-    def getClosestMinor(self, my_crew, cart):
+    def getClosestMinor(self, my_crew, cart, cartUnit):
         distance = None
         minor = None
         for unit in my_crew.units:
             if unit.type == UnitType.MINER:
-                dist = abs(cart.position.x - unit.position.x) + abs(cart.position.y - unit.position.y)
-                if distance == None or dist < distance:
-                    distance = dist
-                    minor = unit
+                if cartUnit.minor.id == unit.id:
+                    return unit
+                minor = next((x for x in self.minors if x.position == unit.position), None)
+                if not minor.hasCart:
+                    dist = abs(cart.position.x - unit.position.x) + abs(cart.position.y - unit.position.y)
+                    if distance == None or dist < distance:
+                        distance = dist
+                        minor = unit
         return minor
 
     def hasSameAmountofMinorsAndCart(self, my_crew):
@@ -155,3 +187,18 @@ class Bot:
             elif unit.type == UnitType.CART:
                 cart_amount +=1
         return minor_amount == cart_amount
+
+
+class Minor():
+    def __init__(self, position, hasCart, isMining, id):
+        self.position = position
+        self.hasCart = hasCart
+        self.isMining = isMining
+        self.isDirty = False
+        self.id = id
+
+
+class Cart():
+    def __init__(self, minor: Minor, id):
+        self.minor = minor
+        self.id = id
