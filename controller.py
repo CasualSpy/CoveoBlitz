@@ -17,8 +17,7 @@ class controller:
         pass
 
     def getdistancebetween(self, point1: Point, point2: Point):
-        #return math.sqrt((point1.x - point2.x)**2 + (point1.y - point2.y)**2)
-        return (point2.y - point1.y)/(point2.x - point1.x)
+        return math.sqrt((point1.x - point2.x)**2 + (point1.y - point2.y)**2)
 
 
 class StateMachine(Enum):
